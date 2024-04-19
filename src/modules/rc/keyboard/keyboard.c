@@ -95,7 +95,7 @@ void PC_Handle_kb(void)
     if (rc_dbus_obj[0].kb.bit.SHIFT)
     {
         km.move_mode = FAST_MODE;
-        km.max_spd = 4000;
+        km.max_spd = 3500;
     }
     else if (rc_dbus_obj[0].kb.bit.CTRL)
     {
