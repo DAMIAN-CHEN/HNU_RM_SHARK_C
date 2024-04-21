@@ -32,6 +32,9 @@ static void shoot_sub_pull(void);
 /*舵机pwm设备*/
 static struct rt_device_pwm *servo_cover_dev;  // 弹仓盖舵机
 
+//转子角度标志位，防止切换设计模式时拨弹电机反转
+static int total_angle_flag=SHOOT_ANGLE_CONTINUE;
+
 /*发射模块电机使用数量*/
 #define SHT_MOTOR_NUM 3
 
@@ -87,7 +90,6 @@ static float sht_dt;
 void shoot_task_entry(void* argument)
 {
     static float sht_start;
-    static int total_angle_flag=0;//转子角度标志位，防止切换设计模式时拨弹电机反转
     static int servo_cvt_num;
     static int reverse_cnt;
 
@@ -154,7 +156,7 @@ void shoot_task_entry(void* argument)
                     shoot_motor_ref[TRIGGER_MOTOR]= shoot_motor_ref[TRIGGER_MOTOR] + TRIGGER_MOTOR_45_TO_ANGLE * 36;//M2006的减速比为36:1，因此转轴旋转45度，要在转子的基础上乘36倍
                     shoot_cmd.trigger_status=TRIGGER_OFF;//扳机归零
                 }
-                shoot_fdb.shoot_mode=SHOOT_OK;
+                shoot_fdb.trigger_status=SHOOT_OK;
                 break;
 
             case SHOOT_THREE:
@@ -171,7 +173,7 @@ void shoot_task_entry(void* argument)
                     shoot_motor_ref[TRIGGER_MOTOR]= shoot_motor_ref[TRIGGER_MOTOR] + 3 * TRIGGER_MOTOR_45_TO_ANGLE * 36;//M2006的减速比为36:1，因此转轴旋转45度，要在转子的基础上乘36倍
                     shoot_cmd.trigger_status=TRIGGER_OFF;//扳机归零
                 }
-                shoot_fdb.shoot_mode=SHOOT_OK;
+                shoot_fdb.trigger_status=SHOOT_OK;
                 break;
 
             case SHOOT_COUNTINUE:
@@ -195,7 +197,7 @@ void shoot_task_entry(void* argument)
                     shoot_motor_ref[TRIGGER_MOTOR] = 0;
                 }
                 total_angle_flag = 0;
-                shoot_fdb.shoot_mode = SHOOT_OK;
+                shoot_fdb.trigger_status = SHOOT_OK;
                 break;
 
             case SHOOT_REVERSE:
@@ -217,7 +219,7 @@ void shoot_task_entry(void* argument)
                 {
                     dji_motor_relax(sht_motor[i]); // 错误情况电机全部松电
                 }
-                shoot_fdb.shoot_mode=SHOOT_ERR;
+                shoot_fdb.trigger_status=SHOOT_ERR;
                 break;
         }
 #endif
@@ -235,54 +237,53 @@ void shoot_task_entry(void* argument)
             shoot_motor_ref[TRIGGER_MOTOR] = 0;
             shoot_motor_ref[RIGHT_FRICTION] =0;
             shoot_motor_ref[LEFT_FRICTION] = 0;
-            total_angle_flag=0;
+            total_angle_flag=SHOOT_ANGLE_CONTINUE;
         }
 
         switch (shoot_cmd.ctrl_mode)
         {
         case SHOOT_STOP:
             shoot_motor_ref[TRIGGER_MOTOR] = 0;
-            total_angle_flag=0;
+            total_angle_flag=SHOOT_ANGLE_CONTINUE;
             break;
 
         case SHOOT_ONE:
-            if(total_angle_flag == 0)
+            if(total_angle_flag == SHOOT_ANGLE_CONTINUE)
             {
                 shoot_motor_ref[TRIGGER_MOTOR]= sht_motor[TRIGGER_MOTOR]->measure.total_angle;
-                total_angle_flag=1;
+                total_angle_flag=SHOOT_ANGLE_SINGLE;
             }
+            shoot_fdb.trigger_status=SHOOT_WAITING;
             if (shoot_cmd.trigger_status == TRIGGER_ON)
             {
                 shoot_motor_ref[TRIGGER_MOTOR]= shoot_motor_ref[TRIGGER_MOTOR] + TRIGGER_MOTOR_45_TO_ANGLE * 36;//M2006的减速比为36:1，因此转轴旋转45度，要在转子的基础上乘36倍
-                shoot_cmd.trigger_status=TRIGGER_OFF;//扳机归零
+                shoot_fdb.trigger_status=SHOOT_OK;
             }
-            shoot_fdb.shoot_mode=SHOOT_OK;
             break;
 
         case SHOOT_THREE:
             /*从自动连发模式切换三连发及单发模式时，要继承总转子角度*/
-            if(total_angle_flag == 0)
+            if(total_angle_flag == SHOOT_ANGLE_CONTINUE)
             {
                 shoot_motor_ref[TRIGGER_MOTOR]= sht_motor[TRIGGER_MOTOR]->measure.total_angle;
-                total_angle_flag = 1;
+                total_angle_flag = SHOOT_ANGLE_SINGLE;
             }
+                shoot_fdb.trigger_status=SHOOT_WAITING;
             if (shoot_cmd.trigger_status == TRIGGER_ON)
             {
                 shoot_motor_ref[TRIGGER_MOTOR]= shoot_motor_ref[TRIGGER_MOTOR] + 3 * TRIGGER_MOTOR_45_TO_ANGLE * 36;//M2006的减速比为36:1，因此转轴旋转45度，要在转子的基础上乘36倍
-                shoot_cmd.trigger_status=TRIGGER_OFF;//扳机归零
+                shoot_fdb.trigger_status=SHOOT_OK;
             }
-            shoot_fdb.shoot_mode=SHOOT_OK;
             break;
 
         case SHOOT_COUNTINUE:
             shoot_motor_ref[TRIGGER_MOTOR] = shoot_cmd.shoot_freq;//自动模式的时候，只用速度环控制拨弹电机
-            total_angle_flag = 0;
-            shoot_fdb.shoot_mode = SHOOT_OK;
+            total_angle_flag = SHOOT_ANGLE_CONTINUE;
             break;
 
         case SHOOT_REVERSE:
             shoot_motor_ref[TRIGGER_MOTOR]=  -3000;
-            total_angle_flag = 0;
+            total_angle_flag = SHOOT_ANGLE_CONTINUE;
             break;
 
         default:
@@ -290,7 +291,7 @@ void shoot_task_entry(void* argument)
             {
                 dji_motor_relax(sht_motor[i]); // 错误情况电机全部松电
             }
-            shoot_fdb.shoot_mode=SHOOT_ERR;
+            shoot_fdb.trigger_status=SHOOT_ERR;
             break;
         }
         /* 更新发布该线程的msg */

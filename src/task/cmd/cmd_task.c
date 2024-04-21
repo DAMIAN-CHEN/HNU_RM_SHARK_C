@@ -53,6 +53,7 @@ extern rt_uint8_t *r_buffer_point;
 static int key_e_status=-1;
 static int key_f_status=-1;
 static int key_q_status=-1;
+static int key_v_status=-1;
 
 /* ------------------------------- 遥控数据转换为控制指令 ------------------------------ */
 static void remote_to_cmd_dbus(void);
@@ -450,7 +451,6 @@ static void remote_to_cmd_pc_DT7(void)
             {
                 gim_cmd.ctrl_mode = GIMBAL_GYRO;
                 chassis_cmd.ctrl_mode = CHASSIS_FOLLOW_GIMBAL;
-                shoot_cmd.ctrl_mode=SHOOT_COUNTINUE;
                 memset(r_buffer_point,0,sizeof (*r_buffer_point));
             }
             else if(gim_fdb.back_mode==BACK_STEP)
@@ -474,7 +474,6 @@ static void remote_to_cmd_pc_DT7(void)
             {/* 判断归中是否完成 */
                 gim_cmd.ctrl_mode = GIMBAL_AUTO;
                 chassis_cmd.ctrl_mode = CHASSIS_FOLLOW_GIMBAL;
-                shoot_cmd.ctrl_mode=SHOOT_COUNTINUE;
             }
             else if(gim_fdb.back_mode==BACK_STEP)
             {
@@ -521,25 +520,66 @@ static void remote_to_cmd_pc_DT7(void)
     {
         shoot_cmd.friction_status=0;
     }
-    /*TODO:------------------------------------------------------------扳机连发模式---------------------------------------------------------*/
-    if((rc_now->mouse.l==1||rc_now->wheel>=200)&&shoot_cmd.friction_status==1&&(referee_fdb.power_heat_data.shooter_id1_17mm_cooling_heat < (referee_fdb.robot_status.shooter_barrel_heat_limit-10)))
+    /*!------------------------------------------------------------扳机连发模式---------------------------------------------------------*/
+    if (km.v_sta==KEY_PRESS_ONCE)
+    {
+        key_v_status=-key_v_status;
+    }
+    if (key_v_status==-1)
     {
         shoot_cmd.ctrl_mode=SHOOT_COUNTINUE;
-        shoot_cmd.shoot_freq=4500;
-        /*!扳机连发功率限制如果未挂载功率限制，发射频率置为一个合适速度*/
-        if(((int16_t)referee_fdb.robot_status.shooter_barrel_heat_limit-(int16_t)referee_fdb.power_heat_data.shooter_id1_17mm_cooling_heat)<=30)
-        {
-            shoot_cmd.shoot_freq=0;
-        }
-        if(referee_fdb.robot_status.shooter_barrel_heat_limit==0)
-        {
-            shoot_cmd.shoot_freq=3000;
-        }
     }
     else
     {
-        shoot_cmd.ctrl_mode=SHOOT_COUNTINUE;
-        shoot_cmd.shoot_freq=0;
+        shoot_cmd.ctrl_mode=SHOOT_ONE;
+    }
+    switch (shoot_cmd.ctrl_mode)
+    {
+        case SHOOT_ONE:
+            if (rc_now->mouse.l==1&&shoot_cmd.friction_status==1)
+            {
+                if (shoot_fdb.trigger_status==SHOOT_WAITING&&trigger_flag==0)
+                {
+                    shoot_cmd.trigger_status=TRIGGER_ON;
+                    trigger_flag=1;
+                }
+                else if(shoot_fdb.trigger_status==SHOOT_OK)
+                {
+                    shoot_cmd.trigger_status=TRIGGER_ING;
+                }
+
+            }
+            else
+            {
+                shoot_cmd.trigger_status=TRIGGER_OFF;
+            }
+            if (rc_now->mouse.l==0)
+            {
+                trigger_flag=0;
+            }
+
+            break;
+
+        case SHOOT_COUNTINUE:
+            if((rc_now->mouse.l==1||rc_now->wheel>=200)&&shoot_cmd.friction_status==1&&(referee_fdb.power_heat_data.shooter_id1_17mm_cooling_heat < (referee_fdb.robot_status.shooter_barrel_heat_limit-10)))
+            {
+                shoot_cmd.shoot_freq=4500;
+                /*!扳机连发功率限制如果未挂载功率限制，发射频率置为一个合适速度*/
+                if(((int16_t)referee_fdb.robot_status.shooter_barrel_heat_limit-(int16_t)referee_fdb.power_heat_data.shooter_id1_17mm_cooling_heat)<=30)
+                {
+                    shoot_cmd.shoot_freq=0;
+                }
+                if(referee_fdb.robot_status.shooter_barrel_heat_limit==0)
+                {
+                    shoot_cmd.shoot_freq=3000;
+                }
+            }
+            else
+            {
+                shoot_cmd.shoot_freq=0;
+            }
+            break;
+
     }
     /*-------------------------------------------------------------堵弹反转检测------------------------------------------------------------*/
     if (shoot_fdb.trigger_motor_current>=9500||reverse_cnt!=0)/*M2006电机的堵转电流是10000*/
